@@ -64,6 +64,9 @@ if(BUILD_SUBPROJECTS)
   if(EXISTS "${CMAKE_SOURCE_DIR}/template_test/CMakeLists.txt")
     add_subdirectory(template_test)
   endif()
+  if(EXISTS "${CMAKE_SOURCE_DIR}/smart_ptr/CMakeLists.txt")
+    add_subdirectory(smart_ptr)
+  endif()
 endif()
 
 # libevent 示例（需要系统已安装 libevent2，找不到则跳过）
