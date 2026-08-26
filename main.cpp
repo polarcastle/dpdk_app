@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <sys/queue.h>
 #include <rte_common.h>
+#include <rte_eal.h>
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 #include <rte_cycles.h>
@@ -18,7 +20,8 @@ static int
 init_mempool(void)
 {
     const unsigned int socket_id = 0;
-    mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+    mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS, 0, 0,
+                                        RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         return -1;
     return 0;
@@ -29,8 +32,7 @@ init_port(uint16_t port_id)
 {
     struct rte_eth_conf port_conf = {
        .rxmode = {
-           .max_rx_pkt_len = ETHER_MAX_LEN,
-           .split_hdr_size = 0,
+           .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
            .offloads = DEV_RX_OFFLOAD_CHECKSUM | DEV_RX_OFFLOAD_JUMBO_FRAME,
         },
        .txmode = {
@@ -39,15 +41,32 @@ init_port(uint16_t port_id)
         },
     };
     int retval;
+
     retval = rte_eth_dev_configure(port_id, 1, 1, &port_conf);
-    if (retval!= 0)
+    if (retval != 0)
         return retval;
+
     retval = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, RX_RING_SIZE, TX_RING_SIZE);
-    if (retval!= 0)
+    if (retval != 0)
         return retval;
+
+    /* 设置 RX/TX 队列（各 1 个，使用默认配置与 mempool） */
+    retval = rte_eth_rx_queue_setup(port_id, 0, RX_RING_SIZE,
+                                    rte_eth_dev_socket_id(port_id),
+                                    NULL, mbuf_pool);
+    if (retval != 0)
+        return retval;
+
+    retval = rte_eth_tx_queue_setup(port_id, 0, TX_RING_SIZE,
+                                    rte_eth_dev_socket_id(port_id),
+                                    NULL);
+    if (retval != 0)
+        return retval;
+
     retval = rte_eth_dev_start(port_id);
-    if (retval!= 0)
+    if (retval != 0)
         return retval;
+
     return 0;
 }
 
@@ -55,47 +74,39 @@ static int
 receive_packets(uint16_t port_id)
 {
     struct rte_mbuf *bufs[RX_RING_SIZE];
-    const unsigned int nb_rx = rte_eth_rx_burst(port_id, 0, bufs, RX_RING_SIZE);
+    const uint16_t nb_rx = rte_eth_rx_burst(port_id, 0, bufs, RX_RING_SIZE);
     if (nb_rx == 0)
         return 0;
-    for (unsigned int i = 0; i < nb_rx; i++) {
-        // Process received packet here
+    for (uint16_t i = 0; i < nb_rx; i++) {
+        /* 在此处理收到的数据包，当前直接释放 */
         rte_pktmbuf_free(bufs[i]);
     }
     return nb_rx;
-}
-
-static int
-send_packets(uint16_t port_id, struct rte_mbuf *bufs[], unsigned int nb_pkts)
-{
-    const unsigned int nb_tx = rte_eth_tx_burst(port_id, 0, bufs, nb_pkts);
-    if (nb_tx < nb_pkts) {
-        // Retry sending remaining packets
-        for (unsigned int i = nb_tx; i < nb_pkts; i++) {
-            rte_pktmbuf_free(bufs[i]);
-        }
-    }
-    return nb_tx;
 }
 
 int
 main(int argc, char *argv[])
 {
     uint16_t port_id = 0;
-    if (rte_eal_init(argc, argv) < 0)
-        return -1;
-    argc -= rte_eal_init(argc, argv);
-    argv += rte_eal_init(argc, argv);
+    int ret;
+
+    /* 初始化 EAL，只调用一次并保存解析后的参数偏移 */
+    ret = rte_eal_init(argc, argv);
+    if (ret < 0)
+        rte_exit(EXIT_FAILURE, "EAL init failed\n");
+    argc -= ret;
+    argv += ret;
+
     if (init_mempool() < 0)
-        return -1;
+        rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
     if (init_port(port_id) < 0)
-        return -1;
+        rte_exit(EXIT_FAILURE, "Cannot init port %u\n", port_id);
+
     while (1) {
         receive_packets(port_id);
-        // Process packets and prepare for sending
-        struct rte_mbuf *bufs[TX_RING_SIZE];
-        // Populate bufs with packets to send
-        send_packets(port_id, bufs, sizeof(bufs) / sizeof(bufs[0]));
+        /* 发送逻辑：根据需要构造 mbuf 后调用 rte_eth_tx_burst() */
     }
+
+    /* 不会执行到此处；如需优雅退出，请参考 dpdk_copy 的信号处理示例 */
     return 0;
 }
