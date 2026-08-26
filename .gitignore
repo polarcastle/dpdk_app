@@ -33,3 +33,5 @@
 
 # build
 build/
+# prebuilt libevent demo binary
+libevent_test/libevent_demo

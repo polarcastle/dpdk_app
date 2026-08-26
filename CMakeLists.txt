@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(BUILD_DPDK_APPS "Build DPDK-related executables (may require pkg-config libdpdk)" ON)
 option(BUILD_SUBPROJECTS "Build subprojects (tests/examples)" ON)
+option(BUILD_LIBEVENT_DEMO "Build libevent demo (requires libevent2)" ON)
 
 # Try to find DPDK via pkg-config (optional)
 find_package(PkgConfig QUIET)
@@ -65,6 +66,16 @@ if(BUILD_SUBPROJECTS)
   endif()
 endif()
 
+# libevent 示例（需要系统已安装 libevent2，找不到则跳过）
+if(BUILD_LIBEVENT_DEMO)
+  find_library(EVENT_LIBRARY NAMES event)
+  if(EVENT_LIBRARY AND EXISTS "${CMAKE_SOURCE_DIR}/libevent_test/CMakeLists.txt")
+    add_subdirectory(libevent_test)
+  else()
+    message(STATUS "libevent not found, skipping libevent_test (install libevent-dev to enable)")
+  endif()
+endif()
+
 # Helpful messages
 message(STATUS "Project: ${PROJECT_NAME} v${PROJECT_VERSION}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
@@ -74,6 +85,6 @@ message(STATUS "Build subprojects: ${BUILD_SUBPROJECTS}")
 # Quick build instructions printed as a summary target
 add_custom_target(show_build_instructions
   COMMAND ${CMAKE_COMMAND} -E echo "To configure: cmake -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -G \"Ninja\" -DCMAKE_BUILD_TYPE=Release"
-  COMMAND ${CMAKE_COMMAND} -E echo "To build: cmake --build ${CMAKE_BINARY_DIR} -- -j$(nproc)"
+  COMMAND ${CMAKE_COMMAND} -E echo "To build: cmake --build ${CMAKE_BINARY_DIR} -- -j"
   COMMENT "Print quick build instructions"
 )
